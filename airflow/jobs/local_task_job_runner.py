@@ -231,9 +231,14 @@ class LocalTaskJobRunner(BaseJobRunner, LoggingMixin):
         else:
             self.log.info("Task exited with return code %s", return_code)
 
-        if not self.task_instance.test_mode and not is_deferral:
-            if conf.getboolean("scheduler", "schedule_after_task_execution", fallback=True):
-                self.task_instance.schedule_downstream_tasks(max_tis_per_query=self.job.max_tis_per_query)
+        if (
+            not self.task_instance.test_mode
+            and not is_deferral
+            and conf.getboolean(
+                "scheduler", "schedule_after_task_execution", fallback=True
+            )
+        ):
+            self.task_instance.schedule_downstream_tasks(max_tis_per_query=self.job.max_tis_per_query)
 
     def on_kill(self):
         self.task_runner.terminate()
@@ -284,10 +289,7 @@ class LocalTaskJobRunner(BaseJobRunner, LoggingMixin):
                 # A DagRun timeout will cause tasks to be externally marked as skipped.
                 dagrun = ti.get_dagrun(session=session)
                 execution_time = (dagrun.end_date or timezone.utcnow()) - dagrun.start_date
-                if ti.task.dag is not None:
-                    dagrun_timeout = ti.task.dag.dagrun_timeout
-                else:
-                    dagrun_timeout = None
+                dagrun_timeout = None if ti.task.dag is None else ti.task.dag.dagrun_timeout
                 if dagrun_timeout and execution_time > dagrun_timeout:
                     self.log.warning("DagRun timed out after %s.", str(execution_time))
 

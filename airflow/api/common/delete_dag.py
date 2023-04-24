@@ -47,13 +47,12 @@ def delete_dag(dag_id: str, keep_records_in_log: bool = True, session: Session =
     :return count of deleted dags
     """
     log.info("Deleting DAG: %s", dag_id)
-    running_tis = (
+    if running_tis := (
         session.query(models.TaskInstance.state)
         .filter(models.TaskInstance.dag_id == dag_id)
         .filter(models.TaskInstance.state == State.RUNNING)
         .first()
-    )
-    if running_tis:
+    ):
         raise AirflowException("TaskInstances still running")
     dag = session.query(DagModel).filter(DagModel.dag_id == dag_id).first()
     if dag is None:
@@ -73,17 +72,16 @@ def delete_dag(dag_id: str, keep_records_in_log: bool = True, session: Session =
     if SerializedDagModel.has_dag(dag_id=dag_id, session=session):
         SerializedDagModel.remove_dag(dag_id=dag_id, session=session)
 
-    count = 0
-
-    for model in get_sqla_model_classes():
-        if hasattr(model, "dag_id"):
-            if keep_records_in_log and model.__name__ == "Log":
-                continue
-            count += (
-                session.query(model)
-                .filter(model.dag_id.in_(dags_to_delete))
-                .delete(synchronize_session="fetch")
-            )
+    count = sum(
+        (
+            session.query(model)
+            .filter(model.dag_id.in_(dags_to_delete))
+            .delete(synchronize_session="fetch")
+        )
+        for model in get_sqla_model_classes()
+        if hasattr(model, "dag_id")
+        and (not keep_records_in_log or model.__name__ != "Log")
+    )
     if dag.is_subdag:
         parent_dag_id, task_id = dag_id.rsplit(".", 1)
         for model in TaskFail, models.TaskInstance:

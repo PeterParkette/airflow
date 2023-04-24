@@ -105,8 +105,9 @@ def _get_dag_run(
         raise ValueError("Must provide `exec_date_or_run_id` if not `create_if_necessary`.")
     execution_date: pendulum.DateTime | None = None
     if exec_date_or_run_id:
-        dag_run = dag.get_dagrun(run_id=exec_date_or_run_id, session=session)
-        if dag_run:
+        if dag_run := dag.get_dagrun(
+            run_id=exec_date_or_run_id, session=session
+        ):
             return dag_run, False
         with suppress(ParserError, TypeError):
             execution_date = timezone.parse(exec_date_or_run_id)
@@ -313,11 +314,14 @@ def _move_task_handlers_to_root(ti: TaskInstance) -> Generator[None, None, None]
     # task logs propagate to stdout (this is how webserver retrieves them while task is running).
     root_logger = logging.getLogger()
     console_handler = next((h for h in root_logger.handlers if h.name == "console"), None)
-    with LoggerMutationHelper(root_logger), LoggerMutationHelper(ti.log) as task_helper:
+    with (LoggerMutationHelper(root_logger), LoggerMutationHelper(ti.log) as task_helper):
         task_helper.move(root_logger)
-        if IS_K8S_EXECUTOR_POD:
-            if console_handler and console_handler not in root_logger.handlers:
-                root_logger.addHandler(console_handler)
+        if (
+            IS_K8S_EXECUTOR_POD
+            and console_handler
+            and console_handler not in root_logger.handlers
+        ):
+            root_logger.addHandler(console_handler)
         yield
 
 
@@ -366,9 +370,9 @@ def task_run(args, dag: DAG | None = None) -> TaskReturnCode | None:
         )
 
     if args.raw:
-        unsupported_options = [o for o in RAW_TASK_UNSUPPORTED_OPTION if getattr(args, o)]
-
-        if unsupported_options:
+        if unsupported_options := [
+            o for o in RAW_TASK_UNSUPPORTED_OPTION if getattr(args, o)
+        ]:
             unsupported_raw_task_flags = ", ".join(f"--{o}" for o in RAW_TASK_UNSUPPORTED_OPTION)
             unsupported_flags = ", ".join(f"--{o}" for o in unsupported_options)
             raise AirflowException(
@@ -426,10 +430,8 @@ def task_run(args, dag: DAG | None = None) -> TaskReturnCode | None:
                 if task_return_code == TaskReturnCode.DEFERRED:
                     _set_task_deferred_context_var()
     finally:
-        try:
+        with suppress(Exception):
             get_listener_manager().hook.before_stopping(component=TaskCommandMarker())
-        except Exception:
-            pass
     return task_return_code
 
 
@@ -452,9 +454,9 @@ def task_failed_deps(args) -> None:
     ti, _ = _get_ti(task, args.map_index, exec_date_or_run_id=args.execution_date_or_run_id)
 
     dep_context = DepContext(deps=SCHEDULER_QUEUED_DEPS)
-    failed_deps = list(ti.get_failed_dep_statuses(dep_context=dep_context))
-    # TODO, Do we want to print or log this
-    if failed_deps:
+    if failed_deps := list(
+        ti.get_failed_dep_statuses(dep_context=dep_context)
+    ):
         print("Task instance dependencies not met:")
         for dep in failed_deps:
             print(f"{dep.dep_name}: {dep.reason}")
@@ -586,10 +588,10 @@ def task_test(args, dag: DAG | None = None) -> None:
     if not already_has_stream_handler:
         logging.getLogger("airflow.task").propagate = True
 
-    env_vars = {"AIRFLOW_TEST_MODE": "True"}
     if args.env_vars:
-        env_vars.update(args.env_vars)
-        os.environ.update(env_vars)
+        env_vars = {"AIRFLOW_TEST_MODE": "True"}
+        env_vars |= args.env_vars
+        os.environ |= env_vars
 
     dag = dag or get_dag(args.subdir, args.dag_id)
 
@@ -613,11 +615,10 @@ def task_test(args, dag: DAG | None = None) -> None:
             else:
                 ti.run(ignore_task_deps=True, ignore_ti_state=True, test_mode=True)
     except Exception:
-        if args.post_mortem:
-            debugger = _guess_debugger()
-            debugger.post_mortem()
-        else:
+        if not args.post_mortem:
             raise
+        debugger = _guess_debugger()
+        debugger.post_mortem()
     finally:
         if not already_has_stream_handler:
             # Make sure to reset back to normal. When run for CLI this doesn't

@@ -136,9 +136,12 @@ class ClearTaskInstanceFormSchema(Schema):
         """Validates clear task instance form."""
         if data["only_failed"] and data["only_running"]:
             raise ValidationError("only_failed and only_running both are set to True")
-        if data["start_date"] and data["end_date"]:
-            if data["start_date"] > data["end_date"]:
-                raise ValidationError("end_date is sooner than start_date")
+        if (
+            data["start_date"]
+            and data["end_date"]
+            and data["start_date"] > data["end_date"]
+        ):
+            raise ValidationError("end_date is sooner than start_date")
         if data["start_date"] and data["end_date"] and data["dag_run_id"]:
             raise ValidationError("Exactly one of dag_run_id or (start_date and end_date) must be provided")
         if data["start_date"] and data["dag_run_id"]:

@@ -54,6 +54,8 @@ def append_to_pod(pod: k8s.V1Pod, k8s_objects: list[K8SModel] | None):
     :param k8s_objects: a potential None list of K8SModels
     :return: pod with the objects attached if they exist
     """
-    if not k8s_objects:
-        return pod
-    return reduce(lambda p, o: o.attach_to_pod(p), k8s_objects, pod)
+    return (
+        reduce(lambda p, o: o.attach_to_pod(p), k8s_objects, pod)
+        if k8s_objects
+        else pod
+    )
