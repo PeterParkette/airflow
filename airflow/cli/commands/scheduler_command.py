@@ -84,10 +84,9 @@ def _serve_logs(skip_serve_logs: bool = False):
 
     sub_proc = None
     executor_class, _ = ExecutorLoader.import_default_executor_cls()
-    if executor_class.serve_logs:
-        if skip_serve_logs is False:
-            sub_proc = Process(target=serve_logs)
-            sub_proc.start()
+    if executor_class.serve_logs and not skip_serve_logs:
+        sub_proc = Process(target=serve_logs)
+        sub_proc.start()
     yield
     if sub_proc:
         sub_proc.terminate()

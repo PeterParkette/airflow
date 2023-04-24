@@ -207,7 +207,7 @@ def stat_name_default_handler(
         raise InvalidStatsNameException(
             f"The stat_name ({stat_name}) has to be less than {max_length} characters."
         )
-    if not all((c in allowed_chars) for c in stat_name):
+    if any(c not in allowed_chars for c in stat_name):
         raise InvalidStatsNameException(
             f"The stat name ({stat_name}) has to be composed of ASCII "
             f"alphabets, numbers, or the underscore, dot, or dash characters."
@@ -295,16 +295,19 @@ def prepare_stat_with_tags(fn: T) -> T:
 
     @wraps(fn)
     def wrapper(
-        self, stat: str | None = None, *args, tags: dict[str, str] | None = None, **kwargs
-    ) -> Callable[[str], str]:
-        if self.influxdb_tags_enabled:
-            if stat is not None and tags is not None:
-                for k, v in tags.items():
-                    if self.metric_tags_validator.test(k):
-                        if all(c not in [",", "="] for c in v + k):
-                            stat += f",{k}={v}"
-                        else:
-                            log.error("Dropping invalid tag: %s=%s.", k, v)
+            self, stat: str | None = None, *args, tags: dict[str, str] | None = None, **kwargs
+        ) -> Callable[[str], str]:
+        if (
+            self.influxdb_tags_enabled
+            and stat is not None
+            and tags is not None
+        ):
+            for k, v in tags.items():
+                if self.metric_tags_validator.test(k):
+                    if all(c not in [",", "="] for c in v + k):
+                        stat += f",{k}={v}"
+                    else:
+                        log.error("Dropping invalid tag: %s=%s.", k, v)
         return fn(self, stat, *args, tags=tags, **kwargs)
 
     return cast(T, wrapper)
@@ -553,14 +556,14 @@ class _Stats(type):
     factory: Callable
     instance: StatsLogger | NoStatsLogger | None = None
 
-    def __getattr__(cls, name: str) -> str:
-        if not cls.instance:
+    def __getattr__(self, name: str) -> str:
+        if not self.instance:
             try:
-                cls.instance = cls.factory()
+                self.instance = self.factory()
             except (socket.gaierror, ImportError) as e:
                 log.error("Could not configure StatsClient: %s, using NoStatsLogger instead.", e)
-                cls.instance = NoStatsLogger()
-        return getattr(cls.instance, name)
+                self.instance = NoStatsLogger()
+        return getattr(self.instance, name)
 
     def __init__(cls, *args, **kwargs) -> None:
         super().__init__(cls)
@@ -648,12 +651,9 @@ class _Stats(type):
         """Get constant DataDog tags to add to all stats."""
         tags: list[str] = []
         tags_in_string = conf.get("metrics", "statsd_datadog_tags", fallback=None)
-        if tags_in_string is None or tags_in_string == "":
-            return tags
-        else:
-            for key_value in tags_in_string.split(","):
-                tags.append(key_value)
-            return tags
+        if tags_in_string is not None and tags_in_string != "":
+            tags.extend(iter(tags_in_string.split(",")))
+        return tags
 
 
 if TYPE_CHECKING:

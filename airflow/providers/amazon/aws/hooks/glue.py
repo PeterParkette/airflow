@@ -92,7 +92,7 @@ class GlueJobHook(AwsBaseHook):
                 raise ValueError("Cannot specify num_of_dpus with custom WorkerType")
         elif not worker_type_exists and num_workers_exists:
             raise ValueError("Need to specify custom WorkerType when specifying NumberOfWorkers")
-        elif worker_type_exists and not num_workers_exists:
+        elif worker_type_exists:
             raise ValueError("Need to specify NumberOfWorkers when specifying custom WorkerType")
         elif num_of_dpus is None:
             self.num_of_dpus: int | float = 10
@@ -308,10 +308,11 @@ class GlueJobHook(AwsBaseHook):
         job_name = job_kwargs.pop("Name")
         current_job = self.conn.get_job(JobName=job_name)["Job"]
 
-        update_config = {
-            key: value for key, value in job_kwargs.items() if current_job.get(key) != job_kwargs[key]
-        }
-        if update_config != {}:
+        if update_config := {
+            key: value
+            for key, value in job_kwargs.items()
+            if current_job.get(key) != job_kwargs[key]
+        }:
             self.log.info("Updating job: %s", job_name)
             self.conn.update_job(JobName=job_name, JobUpdate=job_kwargs)
             self.log.info("Updated configurations: %s", update_config)
